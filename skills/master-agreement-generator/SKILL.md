@@ -1,13 +1,16 @@
 ---
 name: master-agreement-generator
-description: Generate counterparty master agreements from one template plus a per-counterparty JSON spec, with role-selected clauses, a rolling Schedule A appended by written notice instead of re-signing, and a signature page pinned to its own page for stable e-sign geometry. Use when you need to issue the same framework agreement to many counterparties, add deals to an executed agreement without a new signature, or keep contract documents reproducible from source.
+description: Generate review drafts of counterparty master agreements from one template plus a JSON spec, with role-selected clauses and a Schedule A workflow limited to the executed agreement's notice authority. Use when you need reproducible drafting and separately reviewed execution preparation.
 ---
 
 # Master Agreement Generator
 
-One master template, one small spec per counterparty, one build step. The
-executed agreement covers every future opportunity; each opportunity is added
-to a rolling schedule by a dated written notice. Nobody re-signs.
+One master template, one small spec per counterparty, one draft build step.
+The generator always labels output **DRAFT**, including documents generated
+from a completed template. A successful conversion proves artifact generation,
+not legal completeness, authority to contract, or readiness to send or sign.
+An executed agreement may permit designated opportunities to be added by notice;
+that authority must be established before using the Schedule A workflow.
 
 ## When to Use
 
@@ -60,9 +63,31 @@ One JSON file per counterparty:
 }
 ```
 
-Only `file`, `short`, and `role` are required. Missing signature fields
-render as blank lines to be completed at signing. See
+Only `file`, `short`, and `role` are required for a draft. Missing signature fields
+render as blank lines for review and completion. See
 [references/spec.example.json](references/spec.example.json).
+
+`file` must be a nonempty portable filename, such as `AcmeSupplier` or
+`Acme Supplier`, without directory components. The builder rejects either path
+separator, drive/UNC syntax, control characters, Windows-reserved punctuation
+or device names, and trailing dots or spaces. Invalid names are rejected without
+sanitizing or renaming them, before creating output or invoking pandoc.
+
+Omit `schedule` or use `[]` for the “no entries at signing” placeholder. A supplied
+schedule must otherwise be a dense array of six-cell arrays, in this order:
+number, date, protected counterparty or lot, role, terms, fee. Each cell must be
+a valid Unicode string or finite number; empty strings are allowed for intentional blanks.
+Nulls, booleans, objects, nested cell arrays, missing cells and non-finite numbers
+are rejected with a row/cell index before any artifact write or pandoc activity.
+Unpaired UTF-16 surrogates are also rejected rather than replaced during UTF-8
+output; valid supplementary characters, such as emoji, remain supported.
+
+Cells are plain text, not Markdown or HTML. The builder encodes syntax characters
+so literal pipes, backslashes, backticks and markup stay in their original fields.
+Each CRLF, bare CR or LF becomes a space; text around line breaks is retained.
+Other whitespace and literal punctuation are preserved in the rendered cells.
+The source spec is not modified. An ordinary valid schedule retains its six
+columns; malformed input is never silently replaced with an empty schedule.
 
 ### Role table
 
@@ -79,6 +104,13 @@ Unknown roles are rejected at build time.
 
 ### Build
 
+Use operator-reviewed templates and specs only. Ordinary template substitutions
+outside Schedule A are markup-capable, not a sanitizer for untrusted documents.
+Pandoc can read referenced local or remote resources; this generator does not
+sandbox the converter's filesystem or network access. Review those references
+and run conversion in your own appropriately restricted environment. The focused
+tests use a synthetic converter and do not certify real DOCX layout or isolation.
+
 ```sh
 node skills/master-agreement-generator/scripts/build-agreement.js \
   skills/master-agreement-generator/references/master-template.example.md \
@@ -86,16 +118,41 @@ node skills/master-agreement-generator/scripts/build-agreement.js \
   out/
 ```
 
-The script fills placeholders, renders the schedule table, writes
-`out/<file> MASTER.md`, and converts to `.docx` with pandoc when pandoc is on
-`PATH`. Without pandoc it writes the markdown and reports that docx was
-skipped, exit code 0. Keep the generated files out of version control; the
-template and specs are the source.
+The script fills placeholders, renders the schedule table, and writes
+`out/<file> MASTER.md` with a mandatory DRAFT notice. By default (or with
+`--require-docx`) it requires installed pandoc to produce a nonempty regular
+`.docx` artifact. Missing pandoc, failed conversion or missing/empty output
+returns exit code 1. Each pandoc probe or conversion is bounded to ten seconds.
+Unknown, duplicate or conflicting flags return exit code 2.
+
+Use `--markdown-only` explicitly for a successful Markdown-only draft. This mode
+never probes or invokes pandoc, returns `docxSkipped: true` from the library,
+and provides no DOCX for an e-sign workflow. Library callers must pass
+`{ markdownOnly: true }`; `{ pandoc: false }` alone now fails the DOCX requirement.
+The result always reports `documentStatus: 'draft'`. Existing generated DOCX is
+removed when rebuilding its Markdown, and failed conversion leaves no partial
+DOCX, so an earlier artifact cannot masquerade as the current output. Keep
+both generated files out of version control; the template and specs are source.
+
+There is no execution-copy mode. The example deliberately contains unresolved
+bracketed drafting directives; filling `{{PLACEHOLDER}}` tokens does not complete
+those legal provisions. Before preparing an execution document, obtain separate
+review of the completed clauses, party details, authorized signer, commercial
+terms and exact document version. Preserve the draft and the reviewed execution
+copy as distinct records. Even a successful DOCX conversion does not authorize an
+upload, send or signature. See the esign-field-placement approval workflow.
+
+Both output destinations must be direct children of the resolved output directory.
+An existing symlink at either destination, including a dangling link, is rejected
+before either artifact is written, even when DOCX conversion is disabled. Ordinary
+regular files can be rebuilt. Use an output directory you control; these checks
+do not provide isolation against concurrent hostile filesystem changes. Returned
+artifact paths are absolute.
 
 ### Signature page geometry
 
 The template ends the body with an OpenXML page break so the signature block
-always starts a fresh page:
+requests a fresh page in a compatible DOCX renderer:
 
 ````markdown
 ```{=openxml}
@@ -103,34 +160,44 @@ always starts a fresh page:
 ```
 ````
 
-The signature page layout (our block, then the counterparty block, each with
-By, Name, Title, Email, Date) never changes between counterparties. That is
-what lets e-signature field placement use fixed coordinates; see the
-esign-field-placement skill.
+The signature page structure (our block, then the counterparty block, each with
+By, Name, Title, Email, Date) is consistent, but pagination can change with text,
+fonts, renderer or format. Inspect the actual reviewed document and its page
+geometry before placing fields; see the esign-field-placement skill.
 
 ### Schedule A append workflow
 
-The schedule is rolling. Adding an entry is a notice, not an amendment:
+Use the executed agreement's actual authority and notice requirements:
 
-1. Agree the opportunity terms in the shared channel or by email.
-2. Send a dated written Schedule A notice in that same channel or by email.
-   It names the protected counterparty or lot, our role for that entry
-   (introducer, or principal), the commercial terms, and the fee (standard
-   unless a different percentage, fixed amount, or per-unit rate is stated).
-3. The entry takes effect on the notice date unless the counterparty objects
-   within the objection window (for example ten business days) with dated
-   written evidence of a substantive pre-existing relationship.
-4. Record the entry in the tracked spec's `schedule` array and rebuild the
-   document so the source of truth matches what was noticed.
-5. Each entry carries its own protection period (for example twelve months
-   from its notice date).
-
-Schedule A notices are draft-only content (contractual). File them for
-operator approval before sending; see operator-approval-loop.
+1. Review opportunity economics and negotiation strategy in an **internal**
+   negotiation/approval channel. Obtain commitment approval before sending
+   contractual content. A shared counterparty channel is not an internal channel.
+2. Confirm that the proposed entry, role, terms, fee and effective date fall
+   within the agreement's express Schedule A notice authority. Changes to
+   standing terms, or variations outside that authority, require the applicable
+   amendment procedure; a notice cannot create its own exception.
+3. Draft an approved, counterparty-specific dated notice for the recipient and
+   notice channel authorized by the executed agreement. Include useful business
+   content: the protected counterparty or lot, authorized role, commercial terms
+   and applicable fee. Exclude internal margins, negotiation strategy, other
+   parties' economics, system traces, raw errors and internal filing notices.
+4. File the exact notice for operator approval before sending; see
+   operator-approval-loop. Preserve silence in the counterparty channel while
+   approval or participation authority is absent. Approval is distinct from
+   evidence that an authorized sender actually delivered the notice.
+5. Record the authorized delivery evidence, effective date and any objection
+   under the executed agreement's actual requirements. Example periods are not
+   defaults. Keep the executed document immutable; update the tracked schedule
+   record and rebuild a **draft consolidated view** for internal review, with a
+   reference to the executed version and approved notice. This rebuild does not
+   replace the signed agreement or prove legal effect.
 
 ## Examples
 
 ### Notice text
+
+Illustrative draft only: use these terms and dates solely when the executed
+agreement authorizes them and the operator approves this exact recipient notice.
 
 ```text
 Schedule A notice, 2026-09-02
@@ -152,10 +219,12 @@ with dated written evidence of a prior relationship with the counterparty.
 ]
 ```
 
-Rebuild, diff the markdown, attach the rebuilt document to the record.
+Rebuild, diff the draft Markdown, and attach the consolidated draft to the
+internal record alongside the unchanged executed document and notice evidence.
 
 ### Counterparty fills its own details at signing
 
-Omit `legal`, `juris`, `addr`, `signer`, `title`, `email` from the spec. The
-build renders blank lines and the e-sign envelope places small text fields
-over them for the counterparty to complete.
+For drafting, omit `legal`, `juris`, `addr`, `signer`, `title`, `email` from the
+spec to render blank lines. A separately reviewed execution workflow must decide
+which details may be completed by the counterparty and verify the actual fields;
+the generator does not create or approve an e-sign envelope.

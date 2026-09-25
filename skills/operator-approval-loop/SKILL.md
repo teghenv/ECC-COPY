@@ -1,13 +1,13 @@
 ---
 name: operator-approval-loop
-description: Never-silent operator approval contract for agent-drafted outbound messages, with hashed drafts, epoch-keyed decisions, an idempotent delivery ledger, and a pre-draft baseline gate. Use when an agent drafts messages to external counterparties and a human operator must approve, reject, or steer each send before it leaves.
+description: Operator approval contract with internal filing notices for agent-drafted outbound messages, hashed drafts, epoch-keyed decisions, durable delivery claims and receipts, and a pre-draft baseline gate. Use when an agent drafts messages to external counterparties and a human operator must approve, reject, or steer each send before it leaves.
 ---
 
 # Operator Approval Loop
 
 An agent that talks to external counterparties should never send on its own
-judgment and should never go quiet. This skill defines the contract that
-makes both true: every outbound draft is filed as an obligation, an operator
+judgment and should keep the operator informed internally. This skill defines
+the contract: every outbound draft is filed as an obligation, an operator
 decides on the exact text, and a delivery ledger proves what went out.
 
 ## When to Use
@@ -29,6 +29,8 @@ decides on the exact text, and a delivery ledger proves what went out.
 | Obligation | One thing we owe a counterparty. Status moves `drafted`, then `approved` or `rejected`, then `sent`. Carries `direction`, `counterparty`, `channel`, and an `updated_at` epoch. |
 | Draft | Sidecar row holding the exact draft text, a sha256 of that text, origin coordinates (platform, channel, thread, user), and priority (P0 to P3). One per obligation, replaced on re-file. |
 | Decision | An operator's approve or reject, recorded with the operator id, a nonce, and the draft epoch it was made against. |
+| Approval snapshot | Immutable text, hash, epoch and destination recorded by the already-authorized decision writer. Missing snapshots cannot grant dispatch. |
+| Claim | Durable reservation with a random token and state; at most one active claim per obligation. |
 | Delivery | Ledger row proving one send or notice for one (obligation, decision) pair. |
 
 The reference schema is in [references/approval-ledger.sql](references/approval-ledger.sql).
@@ -46,9 +48,21 @@ The reference schema is in [references/approval-ledger.sql](references/approval-
    obligation's `updated_at`. That advance is the epoch rotation: any
    decision keyed to the old epoch can no longer release the new text.
    Otherwise insert a new obligation with status `drafted`.
-5. Acknowledge in the origin channel that a draft is filed and awaiting
-   approval. Never-silent means the requester always sees that something
-   happened, even when the answer is "waiting on the operator".
+5. Route the filing receipt only to a configured, verified internal ops
+   destination. If the origin is that internal destination, acknowledge there.
+   Never-silent means internal reporting, not an automatic external reply.
+   Keep draft hashes, approval status, operator identity and workflow metadata
+   out of counterparty-visible channels. Unknown or unclassified origins stay
+   quiet; a direct message is not automatically internal.
+
+If a verified internal destination is unavailable, retain the filing result
+in the internal tool result or operator surface. Never fall back to an external
+or unknown origin. A tool result exposed to outsiders is not an internal surface.
+
+Filing a draft does not authorize an external response. Any policy-permitted
+clarifying question or neutral response is a separate outbound decision, subject
+to the existing mention, channel, draft-only, frozen and never constraints in
+counterparty-channel-discipline. It must not disclose internal approval metadata.
 
 ### Baseline gate
 
@@ -74,22 +88,77 @@ epoch (`draft_updated_ts`) and flips the obligation status in the same
 transaction. A decision whose epoch does not match the current `updated_at`
 is stale and must not release anything.
 
+For an already-authorized approve decision, the same transaction inserts an
+immutable `obligation_approval_snapshots` row: decision and obligation IDs,
+current draft epoch, exact text and SHA-256, platform/channel/thread, and kind
+`draft_sent`. The decision writer must establish authorization before writing;
+the reference never authenticates an operator or manufactures a decision.
+Automatic approval policy is not enabled or expanded by the reference.
+Legacy decisions without snapshots require explicit reconciliation or a new
+approval; never backfill permission from the current mutable draft.
+
 ### Delivering
 
-A delivery monitor scans for decided obligations with no delivery row:
+The SQLite reference is [references/approval_claims.py](references/approval_claims.py).
+It grants dispatch permission but never calls transport. Use an existing local
+reference database initialized from the SQL fixture; the module does not apply
+schema or production migrations. Only a trusted decision writer may populate
+approval records. All writers must enable foreign keys and recursive triggers
+and honor the schema guards; administrative database tampering is outside this model.
 
-1. Send the exact `draft_text` from the sidecar. Never re-derive text from
-   the summary or regenerate it.
-2. Insert the delivery row keyed by (obligation_id, decision_id). The UNIQUE
-   constraint makes this idempotent: if the insert conflicts, someone else
-   delivered, so stop without sending.
-3. On success flip the obligation to `sent`.
-4. In internal channels append a receipt footer:
-   `approved by <operator> · receipt <decision_id> · draft sha256 <prefix>`.
+1. Discover bound approved drafts. Discovery is not permission. `claim()` opens
+   its own `BEGIN IMMEDIATE` transaction, validates the current approved epoch,
+   exact text, computed SHA-256 and full destination against the snapshot, and
+   inserts a unique claim before returning its token. A conflict stops the worker
+   before transport. Completed receipts cannot be claimed again.
+2. `begin_dispatch()` revalidates the binding and atomically changes `claimed`
+   to `dispatching` using the token. Only its winning caller receives
+   the exact `draft_text` and destination after commit. Never regenerate text, reread a
+   mutable sidecar for transport, or reuse the payload for another attempt.
+   A nested caller transaction is refused; permission cannot depend on a later
+   caller commit. No database transaction remains open across transport.
+3. A confirmed successful result goes to `complete()`, which atomically records
+   the delivery coordinate, marks the claim delivered and flips the obligation
+   to `sent`. Identical completion is a no-op; conflicting coordinates fail.
+   The receipt UNIQUE key deduplicates records, not prior external effects.
+4. Exceptions, timeouts, worker death after begin-dispatch, or failed receipt
+   persistence leave a blocked attempt. `mark_unknown()` records uncertainty.
+   Unknown claims never expire, reopen, auto-retry or allow another decision for
+   that obligation to bypass them. A trusted caller may use `reconcile()` with
+   confirmed successful coordinate and evidence; the module does not verify
+   that evidence. An absent receipt is not proof of non-delivery.
 
-Rejected decisions produce a reject notice through the same ledger. Legacy
-obligations that have no draft sidecar are reported for a manual notice, not
-delivered.
+The guarantee is one automatic dispatch attempt per approved decision, not
+exactly-once external delivery. A crash after begin-dispatch but before transport
+can leave zero sends and a held claim. Releasing an unknown outcome for a new
+attempt would require fencing the original executor and verifying provider
+semantics; this reference deliberately provides no such retry operation.
+
+| Claim state | Allowed next states |
+| --- | --- |
+| claimed | dispatching or cancelled before dispatch |
+| dispatching | delivered or unknown |
+| unknown | delivered through trusted reconciliation only |
+| delivered, cancelled | terminal; decision key cannot be reused |
+
+While a claim is active, database guards freeze obligation, draft and decision
+writes, including replacements. Snapshots and claims cannot be erased. Cancel a
+claimed operation with its token before re-filing; the stale token then grants
+nothing. After dispatch begins, hold new edits or revocation for reconciliation.
+This serializes changes instead of pretending to recall an in-flight operation.
+
+Rejected decisions and legacy rows without draft sidecars/snapshots never enter
+this external draft-send path. Report them on the internal operator surface for
+manual handling. Internal receipt footers remain internal:
+`approved by <operator> · receipt <decision_id> · draft sha256 <prefix>`.
+Never alter already-approved external text to append workflow metadata.
+
+Focused local validation uses temporary databases, separate connections and a
+simulated attempt counter, not a provider or real message:
+`python3 -m unittest discover -s tests/skills -p 'test_approval_delivery_claims.py'`.
+The tests require Python 3.11+ with SQLite serialization support; the reference
+uses only the standard library. The existing desk-pattern contract checks remain
+a separate compatibility check.
 
 ### Time-boxed auto-approval (optional)
 
@@ -123,7 +192,11 @@ file_request(
 -> {obligation_id: 431, draft_sha256: "9f2c...", refiled: false}
 ```
 
-Origin channel sees: `Draft filed for approval (P1, sha 9f2c8a1b). Waiting on operator.`
+The configured, verified internal ops destination sees:
+`Draft filed for approval (P1, sha 9f2c8a1b). Waiting on operator.`
+The counterparty-visible origin channel receives no filing notice. If no verified
+internal destination is available, the receipt stays in the internal tool result
+or operator surface, with no external fallback.
 
 ### Re-file after a steer
 
@@ -150,8 +223,16 @@ approved by operator-a · receipt 118 · draft sha256 9f2c8a1b2d3e4f50
 
 ## Invariants to test
 
+- Filing receipts go only to configured, verified internal ops; the origin
+  receives one only when it is that verified internal destination.
+- An unknown origin stays quiet. An unavailable internal destination uses the
+  internal tool result or operator surface, with no external fallback.
 - Same (counterparty, channel) filed twice yields one obligation, two epochs.
 - A decision with a stale epoch never results in a delivery row.
-- Two concurrent deliverers produce exactly one delivery row and one send.
+- Two concurrent claimants yield one dispatch permission; losers never attempt transport.
+- Unknown outcomes and failed receipt persistence never enable an automatic retry.
+- Successful completion records the receipt and sent status in one transaction.
+- An altered epoch, text, hash or destination cannot acquire or begin a claim.
+- Active claims block re-file; only pre-dispatch cancellation can release that hold.
 - Gate unavailable stamps the marker; gate signed refuses without force.
 - Auto-ttl never fires against text the operator has since re-filed.

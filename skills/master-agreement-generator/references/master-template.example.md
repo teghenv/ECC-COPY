@@ -1,6 +1,6 @@
 # MASTER AGREEMENT: MUTUAL NON-DISCLOSURE, {{FEE_TITLE}} AND NON-CIRCUMVENTION
 
-**Execution copy. Our fields are complete; {{CP_SHORT}} fields are completed at signing where blank. One signature covers every introduction and every transaction between the parties; each opportunity is logged on Schedule A by written notice. No re-signing.**
+**Template draft for review, not an execution copy. Complete all bracketed directives and party fields and obtain the required legal and operator review before preparing any execution document. Schedule A notices apply only when authorized by the executed agreement.**
 
 This Master Agreement (the **Agreement**) is entered into as of **{{DATE}}** between **[OUR LEGAL NAME]**, a [our jurisdiction and form], at [our address] (**Us**), and **{{CP_LEGAL}}**, a {{CP_JURIS}}, at {{CP_ADDR}} (**{{CP_SHORT}}**). Each is a **Party**.
 
@@ -9,7 +9,7 @@ This Master Agreement (the **Agreement**) is entered into as of **{{DATE}}** bet
 - **Transaction:** [define the covered dealings between {{CP_SHORT}} and a Protected Counterparty, including renewals and replacements].
 - **Contract Value:** [define the base the fee is computed on].
 - **Protected Counterparty:** [a party or lot first identified in writing by the introducing Party in a Schedule A notice, together with affiliates and nominees].
-- **Schedule A notice:** a dated written notice in the parties' shared channel or by email identifying the Protected Counterparty and, where applicable, the terms and any fee that differs from the standard fee. An entry takes effect on the notice date unless {{CP_SHORT}} objects within [objection window] with dated written evidence of a substantive pre-existing relationship.
+- **Schedule A notice:** a dated, approved, counterparty-specific written notice delivered through the notice channel authorized by the executed agreement, identifying the Protected Counterparty and the terms and fee that the agreement permits to be stated by notice. It contains no internal negotiation detail or third-party economics. An authorized entry takes effect on the notice date unless {{CP_SHORT}} objects within [objection window] with dated written evidence of a substantive pre-existing relationship.
 - **Protection Period:** [period] from each Schedule A notice, for that entry.
 
 ## 2. Standing arrangement
@@ -20,7 +20,7 @@ This Master Agreement (the **Agreement**) is entered into as of **{{DATE}}** bet
 
 {{FEE_CLAUSE}}
 
-**Standard Fee.** [Insert the counsel-approved fee schedule.] Where Schedule A states a different fee for an entry, that fee applies to that entry instead.
+**Standard Fee.** [Insert the counsel-approved fee schedule.] A different fee may be recorded by Schedule A notice only to the extent the executed agreement expressly authorizes that variation; otherwise obtain the required signed amendment first.
 
 **Payment.** [When the fee is due relative to funds received.]
 
@@ -40,11 +40,11 @@ This Master Agreement (the **Agreement**) is entered into as of **{{DATE}}** bet
 
 ## 7. General
 
-[Liability cap and carve-outs; injunctive relief; governing law and forum; assignment; notices by email to the signature page addresses; entire agreement on its subject matter; {{SUPPLEMENT_CLAUSE}}amendable only in a signed writing; electronic signatures and counterparts.]
+[Liability cap and carve-outs; injunctive relief; governing law and forum; assignment; notices by email to the signature page addresses; entire agreement on its subject matter; {{SUPPLEMENT_CLAUSE}}amendable only in a signed writing, except for Schedule A entries expressly authorized by this Agreement to be added by notice without changing its standing terms; changes outside that notice authority require the agreed amendment procedure; electronic signatures and counterparts.]
 
 ## Schedule A (rolling)
 
-Entries are added by Schedule A notice as defined in Section 1. Each entry states the Protected Counterparty or lot, the introducing Party's role, the commercial terms, and the fee (standard unless stated).
+Only entries within the executed agreement's express notice authority are added by Schedule A notice as defined in Section 1; a notice does not itself authorize an amendment to standing terms. Each entry states the Protected Counterparty or lot, the introducing Party's role, the commercial terms, and the fee (standard unless stated).
 
 <!-- markdownlint-disable MD055 MD056 -->
 | # | Date | Protected Counterparty or lot | Role | Terms | Fee |
