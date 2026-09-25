@@ -1,5 +1,9 @@
 # Placement checklist
 
+Before placing
+
+- [ ] Signature page is the last page and starts on its own page.
+- [ ] Browser session is signed in by a human; no login page visible.
 This is a written workflow contract, not an executable browser guard or a live
 placement test. Use it with the skill's calibration procedure and hard gate.
 
@@ -38,6 +42,8 @@ Recipients
 
 Calibration
 
+- [ ] One signature field dropped, selected, Location panel read.
+- [ ] Page origin and scale computed from that reading.
 - [ ] Axis-aligned, unrotated transform established for each axis; unsupported
       rotation or shear requires a stop.
 - [ ] Origin and scale independently known, or independently known positive scale
@@ -56,6 +62,7 @@ Calibration
 Fields (per recipient, our block first)
 
 - [ ] Recipient selected before placing their fields.
+- [ ] Field dragged to a neutral spot, then positioned by Location panel inputs.
 - [ ] Field dragged to a neutral spot, then positioned by Location panel inputs
       only after calibration passes.
 - [ ] Text fields over blank lines set to 8 point.
@@ -65,6 +72,7 @@ Evidence and gate
 
 - [ ] Signature page screenshot captured with all fields deselected.
 - [ ] Page-1 screenshot captured if fields were placed there.
+- [ ] Action is save as draft unless the operator explicitly instructed send.
 - [ ] Opaque evidence identifier from the trusted caller forms a portable basename
       under a controlled evidence directory; subject must never form the filename.
       Reject path separators, control characters, reserved device names, dot

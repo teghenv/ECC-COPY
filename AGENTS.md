@@ -154,6 +154,7 @@ Troubleshoot failures: check test isolation → verify mocks → fix implementat
 
 ```
 agents/          — 68 specialized subagents
+skills/          — 290 workflow skills and domain knowledge
 skills/          — 292 workflow skills and domain knowledge
 commands/        — 94 slash commands
 hooks/           — Trigger-based automations
